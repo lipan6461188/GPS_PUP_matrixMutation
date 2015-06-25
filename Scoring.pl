@@ -86,9 +86,28 @@ exit(0);
 
 sub writeToFile
 {
-    open OUTPUT ">$output" or die("无法打开输出文件\n");
+    my @keys = keys %offset;
+    @keys = sort @keys;
+    open OUTPUT,">$output" or die("无法打开输出文件\n");
+    print OUTPUT "   ";
+    for(my $i=0;$i<24;$i++)
+    {
+        print OUTPUT substr($keys[$i],1,1),"  ";
+    }
+    for(my $i=0;$i<scalar(@keys);$i++)
+    {
+        if($i%24 == 0)
+        {
+            print OUTPUT "\n";
+            print OUTPUT substr($keys[$i],0,1)," ";
+        }
+        if($offset{ $keys[$i] } >= 0){ print OUTPUT "+"; }
+        print OUTPUT $offset{ $keys[$i] }," ";
+    }
     
+    close OUTPUT;
 }
+
 
 #矩阵突变
 sub matrixMutation
@@ -97,7 +116,7 @@ sub matrixMutation
     my @values = values %BLOSUM;
     my $blosum_size = scalar(@keys);
     
-    for(my $index=0; $index < 10000; $index++)
+    for(my $index=0; $index < 1000; $index++)
     {
         #随机地取出一个位置做突变
         my $rad = int(rand($blosum_size));
