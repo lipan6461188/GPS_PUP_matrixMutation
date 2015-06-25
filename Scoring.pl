@@ -12,6 +12,7 @@ use Getopt::Long;       #长参数
 # --gap     阈值gap
 # --blosum  BLOSUM矩阵的文件
 # --sample  正负样本的文件
+# --output  输出文件
 
 #输入序列的长度、阈值下界与上界、gap、blosum矩阵文件、训练集与测试集文件
 our $upper = 4;
@@ -19,18 +20,19 @@ our $lower = 0;
 our $gap = 0.0001;
 our $blosum;
 our $sample;
-Getopt::Long::GetOptions('upper=s' => \$upper, 'lower=s' => \$lower, 'gap=s' => \$gap, 'blosum=s' => \$blosum, 'sample=s' => \$sample)
+our $output;
+Getopt::Long::GetOptions('upper=s' => \$upper, 'lower=s' => \$lower, 'gap=s' => \$gap, 'blosum=s' => \$blosum, 'sample=s' => \$sample, 'output=s' => \$output)
 or die("Error in command line arguments\n");
 
-if(!defined($blosum) || !defined($sample)){ warn("请输如sample样本文件和blosum矩阵\n"); exit(-1);}
-
+if(!defined($blosum) || !defined($sample) || !defined($output)){ warn("请输如sample样本文件和blosum矩阵\n"); exit(-1);}
 
 #权重分数
-our @scores = (1,1,1,1,1,
-               1,1,1,1,1,
-               1,1,1,1,1,
-               1,1,1,1,1,
-               1,1,1);
+our @scores = ( 1,1,1,1,1,
+                1,1,1,1,1,
+                1,1,1,1,1,
+                1,1,1,1,1,
+                1,1,1
+               );
 #引入前一步的结果
 $scores[4] = 0;
 $scores[7] = 0;
@@ -78,6 +80,16 @@ say "BEGIN ",pop(@performance),"\t",pop(@performance),"\t",pop(@performance);
 
 &matrixMutation();
 
+&writeToFile();
+
+exit(0);
+
+sub writeToFile
+{
+    open OUTPUT ">$output" or die("无法打开输出文件\n");
+    
+}
+
 #矩阵突变
 sub matrixMutation
 {
@@ -111,66 +123,90 @@ sub matrixMutation
         }
     }
     
-    exit(0);
 }
 
-#如果性能相对于上一次有提高，就返回1，否则返回0
+#看看矩阵修改以后，性能有没有提高
+#返回值是Sp，Sn和是否提高的标志
+# @items = {Sp, Sn, flag}
 sub performance
 {
+    my $lower = $lower;
+    my $upper = $upper;
+    my $gap = $gap;
+    
     #首先计算所有样本的分数
     &computeScoreForEveryElem();
+    my @items = &iter_compute_Sn($lower,$upper,$gap);
+    while( abs($items[0] - 0.91) > 0.01 )
+    {
+        $gap /= 10;
+        @items = &iter_compute_Sn($lower,$upper,$gap);
+    }
+    pop(@items);
+    return @items;
+}
+
+#计算Sn和Sp的函数,参数是阈值
+sub compute_Sn_Sp
+{
+    my $threshold = shift @_;
+    
+    #初始化这些变量
+    my $TP=0;
+    my $FN=0;
+    my $TN=0;
+    my $FP=0;
+    my $Sn=0;
+    my $Sp=0;
+    
+    foreach(@positive_score)
+    {
+        if($_ >= $threshold)
+        { $TP++; }
+        else
+        { $FN++; }
+    }
+    
+    foreach(@negative_score)
+    {
+        if($_ < $threshold)
+        { $TN++; }
+        else
+        { $FP++; }
+    }
+    
+    $Sp = $TP/($TP+$FN);
+    $Sn = $TN/($TN+$FP);
+    
+    return ($Sn,$Sp);
+}
+
+#参数分别是阈值下界，上界和gap
+sub iter_compute_Sn
+{
+    my $lower = shift @_;
+    my $upper = shift @_;
+    my $gap = shift @_;
+    
     for(my $threshold=$lower; $threshold <= $upper; $threshold += $gap)
     {
-        #初始化这些变量
-        my $TP=0;
-        my $FN=0;
-        my $TN=0;
-        my $FP=0;
-        my $Sn=0;
-        my $Sp=0;
-        my $Pr=0;
+        my @Sn_Sp = &compute_Sn_Sp($threshold);
         
-        foreach(@positive_score)
-        {
-            if($_ >= $threshold)
-            { $TP++; }
-            else
-            { $FN++; }
-        }
-        
-        foreach(@negative_score)
-        {
-            if($_ < $threshold)
-            { $TN++; }
-            else
-            { $FP++; }
-        }
-        #    say '$TP: '.$TP,"\t",'$FN: '.$FN,"\t",'$TN: '.$TN,"\t",'$FP: '.$FP;
-        $Sp = $TP/($TP+$FN);
-        $Sn = $TN/($TN+$FP);
-        if( $TP+$FP eq 0 )
-        {
-            $Pr = 0;
-        }else
-        {
-            $Pr = $TP/($TP+$FP);
-        }
-        #say 'Sp: ',$Sp,"\t",'Sn: ',$Sn,"\t",'Pr: ',$Pr;
-        #定义返回项
+        #定义返回项.返回项中分别是Sp, Sn, 是否提高, 阈值
         my @return_items;
-        push(@return_items,$Sn);
-        push(@return_items,$Sp);
-        if( $Sp - 0.9 <= 0.001 || $Sp < 0.9)
+        push(@return_items,$Sn_Sp[1]);
+        push(@return_items,$Sn_Sp[0]);
+        if( $Sn_Sp[1] - 0.91 <= 0.01 || $Sn_Sp[1] < 0.91)
         {
-            if( $Sn_old < $Sn ) #性能提高了
+            if( $Sn_old < $Sn_Sp[0] ) #性能提高了
             {
-                $Sn_old = $Sn;
+                $Sn_old = $Sn_Sp[0];
                 push(@return_items,1);
-                return @return_items;
             }else{              #性能没有提高
                 push(@return_items,0);
-                return @return_items;
             }
+            push(@return_items,$threshold);
+            return @return_items;
         }
         
     }
@@ -283,7 +319,6 @@ sub similarity
     
     return $score;
 }
-
 
 
 
