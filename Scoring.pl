@@ -156,10 +156,13 @@ sub performance
     #首先计算所有样本的分数
     &computeScoreForEveryElem();
     my @items = &iter_compute_Sn($lower,$upper,$gap);
+    my $times = 0;
     while( abs($items[0] - 0.91) > 0.01 )
     {
+        $times++;
         $gap /= 10;
         @items = &iter_compute_Sn($lower,$upper,$gap);
+        if($times > 5) { last; }
     }
     pop(@items);
     return @items;
